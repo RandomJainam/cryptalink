@@ -1,4 +1,4 @@
-// Mock fixtures and in-memory simulated backend matching the frozen API contract
+// Mock fixtures matching section 10 and section 9 of docs/SPEC.md
 const STEP_NAMES = [
   'encrypt',
   'wrap_key',
@@ -11,51 +11,58 @@ const STEP_NAMES = [
   'store'
 ];
 
+function randomHex32() {
+  const chars = '0123456789abcdef';
+  let str = '';
+  for (let i = 0; i < 32; i++) {
+    str += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return str;
+}
+
 export const mockStatus = {
   server_reachable: true,
   fingerprint: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-  algorithms: ['AES-256-GCM', 'RSA-OAEP', 'HMAC-SHA256', 'SHA-256 Hash Chain'],
+  algorithms: ['RSA-OAEP-3072', 'AES-256-GCM', 'HMAC-SHA256', 'SHA-256 Hash Chain'],
   replay_window_seconds: 60
 };
 
 export function createSuccessResult(filename = 'confidential.pdf', sizeBytes = 1048576) {
-  const msgId = 'msg_' + Math.random().toString(36).substring(2, 10);
   return {
     status: 'accepted',
-    message_id: msgId,
+    message_id: randomHex32(),
     filename: filename,
     size_bytes: sizeBytes,
     reason: null,
-    duration_ms: Math.floor(180 + Math.random() * 90),
+    duration_ms: Math.floor(180 + Math.random() * 80),
     steps: [
       { name: 'encrypt', ok: true, detail: 'AES-256-GCM encrypted payload' },
       { name: 'wrap_key', ok: true, detail: 'Session key wrapped with RSA-OAEP' },
-      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 generated' },
-      { name: 'transmit', ok: true, detail: 'Transmitted via TCP socket' },
+      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 computed over frame' },
+      { name: 'transmit', ok: true, detail: 'TCP frame streamed to port 9000' },
       { name: 'verify_hmac', ok: true, detail: 'HMAC authentication verified' },
-      { name: 'freshness', ok: true, detail: 'Delta +0.4s within +/-60s window' },
-      { name: 'replay_check', ok: true, detail: 'Nonce & ID unique in cache' },
-      { name: 'decrypt', ok: true, detail: 'Decrypted with session key' },
-      { name: 'store', ok: true, detail: 'Written to secure vault' }
+      { name: 'freshness', ok: true, detail: 'Timestamp delta within +/-60s window' },
+      { name: 'replay_check', ok: true, detail: 'Message ID unique; registered in cache' },
+      { name: 'decrypt', ok: true, detail: 'Decrypted with unwrap session key' },
+      { name: 'store', ok: true, detail: 'Written to storage/received/' }
     ]
   };
 }
 
 export function createTamperResult(filename = 'tampered_packet.bin', sizeBytes = 524288) {
-  const msgId = 'msg_' + Math.random().toString(36).substring(2, 10);
   return {
     status: 'rejected',
-    message_id: msgId,
+    message_id: randomHex32(),
     filename: filename,
     size_bytes: sizeBytes,
-    reason: 'HMAC verification failed: 1 byte modified in transit',
-    duration_ms: Math.floor(120 + Math.random() * 60),
+    reason: 'HMAC verification failed: 1 byte modified in transit (INTEGRITY_FAILED)',
+    duration_ms: Math.floor(120 + Math.random() * 50),
     steps: [
       { name: 'encrypt', ok: true, detail: 'AES-256-GCM encrypted payload' },
       { name: 'wrap_key', ok: true, detail: 'Session key wrapped with RSA-OAEP' },
-      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 generated' },
-      { name: 'transmit', ok: true, detail: 'Transmitted via TCP socket' },
-      { name: 'verify_hmac', ok: false, detail: 'HMAC verification failed: digest mismatch' },
+      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 computed over frame' },
+      { name: 'transmit', ok: true, detail: 'TCP frame streamed to port 9000' },
+      { name: 'verify_hmac', ok: false, detail: 'HMAC digest mismatch' },
       { name: 'freshness', ok: false, detail: 'skipped' },
       { name: 'replay_check', ok: false, detail: 'skipped' },
       { name: 'decrypt', ok: false, detail: 'skipped' },
@@ -64,21 +71,21 @@ export function createTamperResult(filename = 'tampered_packet.bin', sizeBytes =
   };
 }
 
-export function createReplayResult(previousMsgId = 'msg_prev882', filename = 'replay_packet.bin', sizeBytes = 524288) {
+export function createReplayResult(previousMsgId = null, filename = 'replay_packet.bin', sizeBytes = 524288) {
   return {
     status: 'rejected',
-    message_id: previousMsgId,
+    message_id: previousMsgId || randomHex32(),
     filename: filename,
     size_bytes: sizeBytes,
-    reason: 'Replay detected: message ID already seen in active 60s window',
-    duration_ms: Math.floor(140 + Math.random() * 50),
+    reason: 'Message ID already processed in active 60s cache (REPLAY)',
+    duration_ms: Math.floor(130 + Math.random() * 40),
     steps: [
       { name: 'encrypt', ok: true, detail: 'AES-256-GCM encrypted payload' },
       { name: 'wrap_key', ok: true, detail: 'Session key wrapped with RSA-OAEP' },
-      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 generated' },
-      { name: 'transmit', ok: true, detail: 'Transmitted via TCP socket' },
+      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 computed over frame' },
+      { name: 'transmit', ok: true, detail: 'TCP frame streamed to port 9000' },
       { name: 'verify_hmac', ok: true, detail: 'HMAC authentication verified' },
-      { name: 'freshness', ok: true, detail: 'Delta +1.2s within +/-60s window' },
+      { name: 'freshness', ok: true, detail: 'Timestamp delta within +/-60s window' },
       { name: 'replay_check', ok: false, detail: 'Duplicate message ID in cache' },
       { name: 'decrypt', ok: false, detail: 'skipped' },
       { name: 'store', ok: false, detail: 'skipped' }
@@ -87,21 +94,20 @@ export function createReplayResult(previousMsgId = 'msg_prev882', filename = 're
 }
 
 export function createStaleResult(filename = 'stale_packet.bin', sizeBytes = 262144) {
-  const msgId = 'msg_' + Math.random().toString(36).substring(2, 10);
   return {
     status: 'rejected',
-    message_id: msgId,
+    message_id: randomHex32(),
     filename: filename,
     size_bytes: sizeBytes,
-    reason: 'Timestamp rejected: skew exceeds +/-60s tolerance',
-    duration_ms: Math.floor(130 + Math.random() * 40),
+    reason: 'Timestamp exceeds +/-60s window (STALE_TIMESTAMP)',
+    duration_ms: Math.floor(125 + Math.random() * 40),
     steps: [
       { name: 'encrypt', ok: true, detail: 'AES-256-GCM encrypted payload' },
       { name: 'wrap_key', ok: true, detail: 'Session key wrapped with RSA-OAEP' },
-      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 generated' },
-      { name: 'transmit', ok: true, detail: 'Transmitted via TCP socket' },
+      { name: 'integrity_tag', ok: true, detail: 'HMAC-SHA256 computed over frame' },
+      { name: 'transmit', ok: true, detail: 'TCP frame streamed to port 9000' },
       { name: 'verify_hmac', ok: true, detail: 'HMAC authentication verified' },
-      { name: 'freshness', ok: false, detail: 'Timestamp delta (+128s) exceeds +/-60s' },
+      { name: 'freshness', ok: false, detail: 'Timestamp skewed (+120s exceeds +/-60s)' },
       { name: 'replay_check', ok: false, detail: 'skipped' },
       { name: 'decrypt', ok: false, detail: 'skipped' },
       { name: 'store', ok: false, detail: 'skipped' }
@@ -113,9 +119,9 @@ export function createStaleResult(filename = 'stale_packet.bin', sizeBytes = 262
 let mockLogs = [
   {
     seq: 1,
-    ts: new Date(Date.now() - 24000).toISOString(),
-    event_type: 'HANDSHAKE',
-    message_id: 'sys_init_01',
+    ts: new Date(Date.now() - 30000).toISOString(),
+    event_type: 'SERVER_START',
+    message_id: '00000000000000000000000000000000',
     result: 'accepted',
     reason: null,
     source_ip: '127.0.0.1'
@@ -123,8 +129,8 @@ let mockLogs = [
   {
     seq: 2,
     ts: new Date(Date.now() - 15000).toISOString(),
-    event_type: 'TRANSFER',
-    message_id: 'msg_init77a',
+    event_type: 'TRANSFER_ACCEPTED',
+    message_id: '4f9a12c8e310467ba9d2e1c78490bf31',
     result: 'accepted',
     reason: null,
     source_ip: '127.0.0.1'
@@ -132,7 +138,7 @@ let mockLogs = [
 ];
 
 let lastSuccessfulTransfer = {
-  message_id: 'msg_init77a',
+  message_id: '4f9a12c8e310467ba9d2e1c78490bf31',
   filename: 'initial_doc.pdf',
   size_bytes: 412000
 };

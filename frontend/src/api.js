@@ -72,7 +72,7 @@ export const api = {
         size_bytes: result.size_bytes
       };
       mockState.addLog({
-        event_type: 'TRANSFER',
+        event_type: 'TRANSFER_ACCEPTED',
         message_id: result.message_id,
         result: result.status,
         reason: result.reason
@@ -99,7 +99,7 @@ export const api = {
       const sizeBytes = file ? file.size : 2048;
       const result = createTamperResult(filename, sizeBytes);
       mockState.addLog({
-        event_type: 'TAMPER_ATTEMPT',
+        event_type: 'INTEGRITY_VIOLATION',
         message_id: result.message_id,
         result: result.status,
         reason: result.reason
@@ -127,7 +127,7 @@ export const api = {
       const prev = mockState.lastSuccess;
       const result = createReplayResult(prev.message_id, prev.filename, prev.size_bytes);
       mockState.addLog({
-        event_type: 'REPLAY_ATTEMPT',
+        event_type: 'REPLAY_REJECTED',
         message_id: result.message_id,
         result: result.status,
         reason: result.reason
