@@ -114,7 +114,7 @@ export function ResultPanel({ result }) {
         >
           {result.steps?.map((step, idx) => {
             const isOk = step.ok;
-            const isSkipped = step.detail === 'skipped';
+            const isSkipped = !step.ok && typeof step.detail === 'string' && step.detail.toLowerCase().startsWith('skipped');
             const statusClass = isSkipped ? 'skipped' : isOk ? 'ok' : 'fail';
 
             return (

@@ -145,12 +145,14 @@ export function Pipeline({
             const crossIcon = containerRef.current.querySelector(`#cross-${node.id}`);
             const numText = containerRef.current.querySelector(`#num-${node.id}`);
 
+const isStepSkipped = (step) => !step?.ok && typeof step?.detail === 'string' && step.detail.toLowerCase().startsWith('skipped');
+
             if (step.ok) {
               if (circle) gsap.set(circle, { stroke: '#10b981', fill: '#06281e' });
               if (label) gsap.set(label, { fill: '#f1f5f9' });
               if (checkIcon) gsap.set(checkIcon, { opacity: 1, scale: 1 });
               if (numText) gsap.set(numText, { opacity: 0 });
-            } else if (step.detail === 'skipped') {
+            } else if (isStepSkipped(step)) {
               if (circle) gsap.set(circle, { stroke: '#475569', fill: '#090d14', strokeDasharray: '3,3' });
               if (caption) {
                 gsap.set(caption, { fill: '#475569' });
@@ -166,7 +168,7 @@ export function Pipeline({
           });
 
           // Position token at last evaluated node
-          const failStepIndex = result.steps.findIndex((s) => !s.ok && s.detail !== 'skipped');
+          const failStepIndex = result.steps.findIndex((s) => !s.ok && !isStepSkipped(s));
           const stopIndex = failStepIndex !== -1 ? failStepIndex : result.steps.length - 1;
           const stopNode = PIPELINE_NODES[stopIndex];
           if (stopNode) {
@@ -222,6 +224,24 @@ export function Pipeline({
             const crossIcon = containerRef.current.querySelector(`#cross-${node.id}`);
             const numText = containerRef.current.querySelector(`#num-${node.id}`);
 
+            if (isStepSkipped(step)) {
+              if (circle) {
+                tl.to(circle, {
+                  stroke: '#475569',
+                  fill: '#090d14',
+                  strokeDasharray: '3,3',
+                  opacity: 0.6,
+                  duration: 0.04
+                });
+              }
+              if (caption) {
+                tl.call(() => {
+                  caption.textContent = 'SKIPPED';
+                });
+              }
+              return;
+            }
+
             // Move packet token to current node
             tl.to(packetToken, {
               x: node.x,
@@ -231,7 +251,7 @@ export function Pipeline({
             });
 
             // Special scene: Replay ghost packet
-            if (actionType === 'replay' && idx === 0) {
+            if (actionType === 'replay' && (idx === 0 || step.name === 'transmit')) {
               tl.to(ghostPacket, { opacity: 0.8, duration: 0.1 }, '<');
               tl.to(ghostPacket, { x: node.x, y: node.y - 30, duration: stepMoveDuration }, '<');
             } else if (actionType === 'replay') {
@@ -287,7 +307,7 @@ export function Pipeline({
               tl.to(numText, { opacity: 0, duration: 0.05 }, '<');
               tl.to(checkIcon, { opacity: 1, scale: 1, duration: 0.1, ease: 'back.out(2)' }, '<0.05');
               tl.to(label, { fill: '#f1f5f9', duration: 0.05 }, '<');
-            } else if (step.detail !== 'skipped') {
+            } else {
               // FAILED NODE ANIMATION (First failed step)
               failedOccurred = true;
 
