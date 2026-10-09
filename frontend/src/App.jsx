@@ -77,7 +77,8 @@ export class ErrorBoundary extends React.Component {
 
 export default function App() {
   const [serverStatus, setServerStatus] = useState(null);
-  const [isReachable, setIsReachable] = useState(true);
+  const [gatewayReachable, setGatewayReachable] = useState(true);
+  const [serverReachable, setServerReachable] = useState(true);
   const [logs, setLogs] = useState([]);
   const [verificationResult, setVerificationResult] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -106,9 +107,11 @@ export default function App() {
     try {
       const data = await api.getStatus();
       setServerStatus(data);
-      setIsReachable(Boolean(data.server_reachable));
+      setGatewayReachable(true);
+      setServerReachable(Boolean(data.server_reachable));
     } catch {
-      setIsReachable(false);
+      setGatewayReachable(false);
+      setServerReachable(false);
     }
   }, []);
   usePolling(pollStatus, 5000);
@@ -118,8 +121,13 @@ export default function App() {
     try {
       const data = await api.getLogs(50);
       setLogs(data);
-    } catch {
-      // Keep existing logs on temporary poll failure
+      setGatewayReachable(true);
+    } catch (err) {
+      if (err?.status === 503) {
+        setServerReachable(false);
+      } else {
+        setGatewayReachable(false);
+      }
     }
   }, []);
   usePolling(pollLogs, 2000);
@@ -151,9 +159,15 @@ export default function App() {
   const isBusy = phase === 'sending' || phase === 'revealing';
   const hasPreviousSuccess = Boolean(lastCompletedResult?.status === 'accepted' || (api.isMock && true));
 
+  const effectiveServerReachable = serverReachable && error?.status !== 503;
+
   return (
     <div className="app-container">
-      <Header serverStatus={serverStatus} isReachable={isReachable} />
+      <Header
+        serverStatus={serverStatus}
+        gatewayReachable={gatewayReachable}
+        serverReachable={effectiveServerReachable}
+      />
 
       <ErrorBoundary onReset={() => window.location.reload()}>
         <AnimatePresence>

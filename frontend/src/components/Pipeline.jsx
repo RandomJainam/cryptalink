@@ -524,7 +524,7 @@ export function Pipeline({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 opacity="0"
-                transformOrigin={`${node.x}px ${node.y}px`}
+                style={{ transformOrigin: `${node.x}px ${node.y}px` }}
               />
               <path
                 id={`cross-${node.id}`}
@@ -534,7 +534,7 @@ export function Pipeline({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 opacity="0"
-                transformOrigin={`${node.x}px ${node.y}px`}
+                style={{ transformOrigin: `${node.x}px ${node.y}px` }}
               />
               <text
                 id={`num-${node.id}`}

@@ -57,7 +57,7 @@ export function EventLog({ logs }) {
 
                   return (
                     <motion.tr
-                      key={`${log.seq}-${log.ts || idx}-${idx}`}
+                      key={`${log.seq}-${log.ts}`}
                       className={isRejected ? 'log-row-rejected' : ''}
                       initial={{
                         opacity: 0,

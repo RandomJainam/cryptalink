@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api.js';
 
-export function Header({ serverStatus, isReachable }) {
+export function Header({ serverStatus, gatewayReachable = true, serverReachable = true }) {
   const [copied, setCopied] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
 
@@ -13,6 +13,13 @@ export function Header({ serverStatus, isReachable }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const isOnline = gatewayReachable && serverReachable;
+  const statusLabel = !gatewayReachable
+    ? 'GATEWAY UNREACHABLE'
+    : !serverReachable
+    ? 'TCP SERVER DOWN'
+    : 'GATEWAY ONLINE';
 
   return (
     <header className="header">
@@ -26,11 +33,11 @@ export function Header({ serverStatus, isReachable }) {
 
       <div className="header-meta">
         <div
-          className={`status-chip ${isReachable ? 'online' : 'offline'}`}
-          aria-label={`Server status: ${isReachable ? 'Reachable' : 'Unreachable'}`}
+          className={`status-chip ${isOnline ? 'online' : 'offline'}`}
+          aria-label={`Server status: ${statusLabel}`}
         >
           <span className="status-dot" />
-          <span>{isReachable ? 'GATEWAY ONLINE' : 'GATEWAY UNREACHABLE'}</span>
+          <span>{statusLabel}</span>
         </div>
 
         <div

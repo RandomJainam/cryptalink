@@ -121,7 +121,7 @@ export function ControlPanel({
           </motion.button>
           {!hasPreviousSuccess && (
             <span className="replay-hint">
-              Requires 1 successful transfer first (avoids 409)
+              Send a file first, then replay it
             </span>
           )}
         </div>
