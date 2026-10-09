@@ -178,6 +178,12 @@ npm.cmd run dev
 
 This starts the UI in mock mode by default. To connect it to the backend, set `VITE_USE_MOCK=false` in `frontend/.env` while the gateway is running. The [frontend/README.md](frontend/README.md) documents mock mode, real-gateway mode, and production build commands.
 
+## Installation
+
+- Download `installer/CryptaLink-Installer.bat`, edit its repository URL if needed, and run it to clone or update the project and start setup.
+- To prepare the current project directly, run `setup.bat` (use `setup.bat /nolaunch` to verify without starting services).
+- To start or reuse the TCP server, gateway, and frontend later, run `run.bat`; close its three service windows to stop them. See [frontend/README.md](frontend/README.md) for frontend commands.
+
 The gateway permits browser origins `http://localhost:5173` and `http://127.0.0.1:5173`. Its OpenAPI document is available at `http://127.0.0.1:8000/openapi.json`.
 
 ## Tests and demos
