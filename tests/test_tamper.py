@@ -2,12 +2,12 @@ import pytest
 
 from audit.logger import AuditLogger
 from config import (STATUS_DECRYPT_FAILED, STATUS_INTEGRITY_FAILED, STATUS_INTERNAL,
-                    STATUS_MALFORMED, STATUS_OK,
-                    STATUS_REPLAY, STATUS_STALE_TIMESTAMP)
+                    MAX_FILE_BYTES, STATUS_MALFORMED, STATUS_OK, STATUS_REPLAY,
+                    STATUS_STALE_TIMESTAMP, STATUS_TOO_LARGE)
 from crypto.encryption import encrypt
 from crypto.integrity import make_tag
 from crypto.keys import generate_rsa_keypair
-from crypto.packet import Packet, build_packet, encode_plaintext, signed_region
+from crypto.packet import Packet, build_packet, encode_plaintext, parse_packet, signed_region
 from crypto.session import new_session_key, split, wrap
 from server.pipeline import process
 from server.replay_cache import ReplayCache
@@ -149,3 +149,36 @@ def test_malformed_and_internal_exits_are_audited(raw, status, event_type,
     result = process(raw, "127.0.0.1", private_key, replay_cache, logger, now=100)
     assert result[0] == status
     assert logger.read_events(1)[0]["event_type"] == event_type
+
+
+@pytest.mark.parametrize("failure", ["malformed", "integrity", "stale", "replay",
+                                      "decrypt", "too_large", "internal"])
+def test_rejections_never_save_files(failure, key_pair, tmp_path, monkeypatch):
+    import server.pipeline
+    import server.storage
+
+    monkeypatch.setattr(server.storage, "RECEIVED_DIR", tmp_path / "received")
+    private_key, public_key = key_pair
+    cache = ReplayCache()
+    if failure == "malformed":
+        raw, expected = b"bad", STATUS_MALFORMED
+    elif failure == "integrity":
+        raw = bytearray(make_raw(public_key))
+        raw[-1] ^= 1
+        raw, expected = bytes(raw), STATUS_INTEGRITY_FAILED
+    elif failure == "stale":
+        raw, expected = make_raw(public_key, timestamp=38), STATUS_STALE_TIMESTAMP
+    elif failure == "replay":
+        raw = make_raw(public_key)
+        cache.check_and_add(parse_packet(raw).message_id, 100)
+        expected = STATUS_REPLAY
+    elif failure == "decrypt":
+        raw, expected = make_raw(public_key, bad_gcm_tag=True), STATUS_DECRYPT_FAILED
+    elif failure == "too_large":
+        raw, expected = make_raw(public_key, content=b"x" * (MAX_FILE_BYTES + 1)), STATUS_TOO_LARGE
+    else:
+        raw, expected = make_raw(public_key), STATUS_INTERNAL
+        monkeypatch.setattr(server.pipeline, "save_file", lambda *_: (_ for _ in ()).throw(OSError("disk")))
+    logger = AuditLogger(tmp_path / "audit.jsonl")
+    assert process(raw, "127.0.0.1", private_key, cache, logger, now=100)[0] == expected
+    assert not (tmp_path / "received").exists() or list((tmp_path / "received").iterdir()) == []
