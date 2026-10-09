@@ -472,9 +472,9 @@ export function Pipeline({
 
           {/* TAMPER ALERT BADGE (Hidden unless tamper triggered) */}
           <g id="tamper-tag" opacity="0" transform="translate(557, 105)">
-            <rect x="-65" y="-12" width="130" height="24" rx="4" fill="#7f1d1d" stroke="#ef4444" strokeWidth="1" />
-            <text x="0" y="4" fill="#fee2e2" fontSize="9" fontWeight="700" textAnchor="middle">
-              1 BYTE MODIFIED
+            <rect x="-80" y="-12" width="160" height="24" rx="4" fill="#7f1d1d" stroke="#ef4444" strokeWidth="1" />
+            <text x="0" y="4" fill="#fee2e2" fontSize="8.5" fontWeight="700" textAnchor="middle">
+              1 BYTE MODIFIED IN TRANSIT
             </text>
           </g>
 
@@ -556,9 +556,9 @@ export function Pipeline({
           {/* GHOST PACKET (used for replay simulation scene) */}
           <g id="ghost-packet" opacity="0" transform="translate(80, 95)">
             <rect
-              x="-34"
+              x="-36"
               y="-14"
-              width="68"
+              width="72"
               height="28"
               rx="4"
               fill="#1e1e2e"
@@ -567,7 +567,7 @@ export function Pipeline({
               strokeWidth="1.5"
             />
             <text x="0" y="4" fill="#c084fc" fontSize="8" fontWeight="700" textAnchor="middle" className="mono">
-              GHOST PACKET
+              {result?.message_id ? result.message_id.slice(0, 7) + '…' : 'REPLAY'}
             </text>
           </g>
 
@@ -604,10 +604,13 @@ export function Pipeline({
           </g>
 
           {/* STORE CONFIRMATION BADGE */}
-          <g id="store-confirmation" opacity="0" transform="translate(1130, 75)">
-            <rect x="-55" y="-14" width="110" height="28" rx="4" fill="#064e3b" stroke="#10b981" strokeWidth="1.5" />
-            <text x="0" y="4" fill="#a7f3d0" fontSize="8.5" fontWeight="700" textAnchor="middle" className="mono">
-              VAULT SAVED ✓
+          <g id="store-confirmation" opacity="0" transform="translate(1130, 70)">
+            <rect x="-65" y="-18" width="130" height="36" rx="5" fill="#064e3b" stroke="#10b981" strokeWidth="1.5" />
+            <text x="0" y="-3" fill="#a7f3d0" fontSize="8.5" fontWeight="700" textAnchor="middle" className="mono">
+              SAVED: {shortFilename}
+            </text>
+            <text x="0" y="10" fill="#6ee7b7" fontSize="8" textAnchor="middle" className="mono">
+              {result?.size_bytes ? `${Math.round(result.size_bytes / 1024)} KiB in vault ✓` : 'Stored in vault ✓'}
             </text>
           </g>
 

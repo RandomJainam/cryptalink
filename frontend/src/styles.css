@@ -579,7 +579,20 @@ body {
 }
 
 .chain-link.broken {
-  background: var(--accent-red);
+  height: 2px;
+  border-top: 2px dashed var(--accent-red);
+  background: transparent;
+  position: relative;
+}
+
+.chain-link.broken::after {
+  content: '✕';
+  position: absolute;
+  top: -8px;
+  left: 1px;
+  font-size: 8px;
+  color: var(--accent-red);
+  font-weight: 700;
 }
 
 /* Event Log */
