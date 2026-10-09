@@ -2,11 +2,11 @@
 
 import argparse
 from pathlib import Path
-import socket
 import sys
 import time
 
 from config import (HOST, MAX_FILE_BYTES, PORT, PUBLIC_KEY_PATH, STATUS_OK)
+from client.attacks import _recv_exact, send_raw
 from crypto.encryption import encrypt
 from crypto.integrity import make_tag
 from crypto.keys import load_public
@@ -15,47 +15,26 @@ from crypto.packet import (Packet, build_packet, encode_plaintext, header_aad,
 from crypto.session import new_session_key, split, wrap
 
 
-def build_packet_for(file_bytes: bytes, filename: str, public_key) -> bytes:
+def build_packet_for(file_bytes: bytes, filename: str, public_key, timestamp=None, progress=None) -> bytes:
     if len(file_bytes) > MAX_FILE_BYTES:
         raise ValueError("file exceeds 10 MiB limit")
     plaintext = encode_plaintext(filename, file_bytes)
     message_id = new_message_id()
-    timestamp = int(time.time())
+    timestamp = int(time.time()) if timestamp is None else timestamp
     session_key = new_session_key()
     aes_key, hmac_key = split(session_key)
     placeholder = Packet(message_id, timestamp, b"\0" * 12, b"", b"", b"")
     nonce, ciphertext = encrypt(aes_key, plaintext, header_aad(placeholder))
+    if progress is not None:
+        progress.append("encrypt")
     wrapped = wrap(session_key, public_key)
+    if progress is not None:
+        progress.append("wrap_key")
     unsigned = Packet(message_id, timestamp, nonce, wrapped, ciphertext, b"\0" * 32)
     tag = make_tag(hmac_key, signed_region(build_packet(unsigned)))
+    if progress is not None:
+        progress.append("integrity_tag")
     return build_packet(Packet(message_id, timestamp, nonce, wrapped, ciphertext, tag))
-
-
-def _recv_exact(connection, size):
-    result = bytearray()
-    while len(result) < size:
-        part = connection.recv(size - len(result))
-        if not part:
-            raise ConnectionError("server closed before response was complete")
-        result.extend(part)
-    return bytes(result)
-
-
-def send_raw(raw: bytes, host=HOST, port=PORT) -> dict:
-    with socket.create_connection((host, port), timeout=10) as connection:
-        connection.sendall(len(raw).to_bytes(4, "big") + raw)
-        response_length = int.from_bytes(_recv_exact(connection, 4), "big")
-        body = _recv_exact(connection, response_length)
-    if len(body) < 19:
-        raise ValueError("malformed server response")
-    reason_length = int.from_bytes(body[17:19], "big")
-    if len(body) != 19 + reason_length:
-        raise ValueError("malformed server response length")
-    return {
-        "status_code": body[0],
-        "message_id": body[1:17].hex(),
-        "reason": body[19:].decode("utf-8"),
-    }
 
 
 def send_file(path_or_bytes, filename, host, port, public_key) -> dict:

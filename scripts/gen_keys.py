@@ -1,6 +1,10 @@
 """Generate the CryptaLink server RSA keypair."""
 
 import os
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config import PRIVATE_KEY_PATH, PUBLIC_KEY_PATH
 from crypto.keys import fingerprint, generate_rsa_keypair, save_private, save_public

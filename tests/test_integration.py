@@ -1,10 +1,17 @@
 import json
+import io
 import socket
 import threading
 import time
 
 from audit.logger import AuditLogger
+from client.attacks import tamper_packet
+from client.client import _recv_exact, build_packet_for, send_raw
+from config import (MAX_PACKET_BYTES, STATUS_INTEGRITY_FAILED, STATUS_OK,
+                    STATUS_REPLAY, STATUS_STALE_TIMESTAMP, STATUS_TOO_LARGE)
 from client.client import send_file
+from fastapi import HTTPException, UploadFile
+import pytest
 from crypto.keys import generate_rsa_keypair
 from server.server import recv_exact, serve_forever
 
@@ -66,3 +73,145 @@ def test_tcp_transfer_saves_identical_bytes(tmp_path, monkeypatch):
     assert result["status_code"] == 0
     saved = list((tmp_path / "received").iterdir())
     assert len(saved) == 1 and saved[0].read_bytes() == b"same bytes"
+
+
+def _send_oversized_length(host, port, size):
+    with socket.create_connection((host, port), timeout=3) as connection:
+        connection.sendall(size.to_bytes(4, "big"))
+        response_size = int.from_bytes(_recv_exact(connection, 4), "big")
+        body = _recv_exact(connection, response_size)
+    reason_size = int.from_bytes(body[17:19], "big")
+    return {"status_code": body[0], "reason": body[19:19 + reason_size].decode("utf-8")}
+
+
+def test_socket_attack_replay_stale_oversize_and_traversal(tmp_path, monkeypatch):
+    import server.storage
+
+    monkeypatch.setattr(server.storage, "RECEIVED_DIR", tmp_path / "received")
+    private_key, public_key = generate_rsa_keypair()
+    logger = AuditLogger(tmp_path / "audit.jsonl")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    stop = threading.Event()
+    thread = threading.Thread(target=serve_forever,
+                              kwargs={"host": "127.0.0.1", "port": port,
+                                      "private_key": private_key, "logger": logger,
+                                      "stop_event": stop}, daemon=True)
+    thread.start()
+    time.sleep(0.1)
+    try:
+        content = b"socket demo"
+        original = build_packet_for(content, "original.txt", public_key)
+        accepted = send_raw(original, "127.0.0.1", port)
+        assert accepted["status_code"] == STATUS_OK
+        received_dir = tmp_path / "received"
+        assert len(list(received_dir.iterdir())) == 1
+
+        tampered = send_raw(tamper_packet(original), "127.0.0.1", port)
+        assert tampered["status_code"] == STATUS_INTEGRITY_FAILED
+        assert len(list(received_dir.iterdir())) == 1
+
+        replay = send_raw(original, "127.0.0.1", port)
+        assert replay["status_code"] == STATUS_REPLAY
+        assert len(list(received_dir.iterdir())) == 1
+
+        stale_packet = build_packet_for(content, "stale.txt", public_key,
+                                        timestamp=int(time.time()) - 61)
+        stale = send_raw(stale_packet, "127.0.0.1", port)
+        assert stale["status_code"] == STATUS_STALE_TIMESTAMP
+        assert len(list(received_dir.iterdir())) == 1
+
+        oversized = _send_oversized_length("127.0.0.1", port, MAX_PACKET_BYTES + 1)
+        assert oversized["status_code"] == STATUS_TOO_LARGE
+        assert len(list(received_dir.iterdir())) == 1
+
+        traversal_packet = build_packet_for(content, "../../escape.txt", public_key)
+        traversal = send_raw(traversal_packet, "127.0.0.1", port)
+        assert traversal["status_code"] == STATUS_OK
+        saved = list(received_dir.iterdir())
+        assert len(saved) == 2 and any(path.name.endswith("_escape.txt") for path in saved)
+        assert all(path.parent == received_dir for path in saved)
+        assert not (tmp_path / "escape.txt").exists()
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+    assert [event["event_type"] for event in logger.read_events(20)] == [
+        "TRANSFER_ACCEPTED", "INTEGRITY_VIOLATION", "REPLAY_REJECTED",
+        "STALE_TIMESTAMP", "OVERSIZE_REJECTED", "TRANSFER_ACCEPTED",
+    ]
+
+
+def test_gateway_openapi_matches_spec_contract():
+    from gateway.main import app
+
+    schema = app.openapi()
+    assert set(schema["paths"]) == {
+        "/api/status", "/api/transfer", "/api/simulate/tamper",
+        "/api/simulate/replay", "/api/logs", "/api/logs/verify",
+    }
+    models = schema["components"]["schemas"]
+    assert list(models["TransferResult"]["properties"]) == [
+        "status", "message_id", "filename", "size_bytes", "reason", "steps", "duration_ms",
+    ]
+    assert list(models["TransferStep"]["properties"]) == ["name", "ok", "detail"]
+    assert list(models["StatusResult"]["properties"]) == [
+        "server_reachable", "fingerprint", "algorithms", "replay_window_seconds",
+    ]
+    upload = schema["paths"]["/api/transfer"]["post"]["requestBody"]
+    assert "multipart/form-data" in upload["content"]
+    optional_upload = schema["paths"]["/api/simulate/tamper"]["post"]["requestBody"]
+    assert optional_upload.get("required") is not True
+
+
+def test_gateway_status_transfer_and_replay_use_tcp_server(tmp_path, monkeypatch):
+    import gateway.main
+    import gateway.state
+    import server.storage
+
+    monkeypatch.setattr(server.storage, "RECEIVED_DIR", tmp_path / "received")
+    private_key, public_key = generate_rsa_keypair()
+    public_path = tmp_path / "server_public.pem"
+    from crypto.keys import save_public
+    save_public(public_key, public_path)
+    monkeypatch.setattr(gateway.main, "PUBLIC_KEY_PATH", public_path)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    monkeypatch.setattr(gateway.main, "HOST", "127.0.0.1")
+    monkeypatch.setattr(gateway.main, "PORT", port)
+    monkeypatch.setattr(gateway.state, "_last_successful", None)
+    logger = AuditLogger(tmp_path / "audit.jsonl")
+    stop = threading.Event()
+    thread = threading.Thread(target=serve_forever,
+                              kwargs={"host": "127.0.0.1", "port": port,
+                                      "private_key": private_key, "logger": logger,
+                                      "stop_event": stop}, daemon=True)
+    thread.start()
+    time.sleep(0.1)
+    try:
+        status_result = gateway.main.status()
+        assert status_result.server_reachable
+        assert status_result.fingerprint
+        with pytest.raises(HTTPException) as missing_replay:
+            gateway.main.simulate_replay()
+        assert missing_replay.value.status_code == 409
+        result = gateway.main.transfer(UploadFile(filename="from-gateway.txt", file=io.BytesIO(b"via gateway")))
+        assert result.status == "accepted"
+        assert [step.name for step in result.steps] == [
+            "encrypt", "wrap_key", "integrity_tag", "transmit", "verify_hmac",
+            "freshness", "replay_check", "decrypt", "store",
+        ]
+        tampered = gateway.main.simulate_tamper(
+            UploadFile(filename="tampered.txt", file=io.BytesIO(b"tamper me")))
+        assert tampered.status == "rejected"
+        assert tampered.steps[4].ok is False
+        replay = gateway.main.simulate_replay()
+        assert replay.status == "rejected"
+        assert replay.message_id == result.message_id
+        assert replay.steps[6].ok is False
+        assert [path.read_bytes() for path in (tmp_path / "received").iterdir()] == [b"via gateway"]
+    finally:
+        stop.set()
+        thread.join(timeout=2)
