@@ -52,12 +52,12 @@ export function EventLog({ logs }) {
               </tr>
             ) : (
               <AnimatePresence initial={false}>
-                {reversedLogs.map((log) => {
+                {reversedLogs.map((log, idx) => {
                   const isRejected = log.result === 'rejected';
 
                   return (
                     <motion.tr
-                      key={log.seq}
+                      key={`${log.seq}-${log.ts || idx}-${idx}`}
                       className={isRejected ? 'log-row-rejected' : ''}
                       initial={{
                         opacity: 0,

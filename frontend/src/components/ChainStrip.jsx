@@ -69,7 +69,7 @@ export function ChainStrip({ logs, verificationResult, isVerifying, onVerify }) 
           }
 
           return (
-            <div key={log.seq} className="chain-block">
+            <div key={`${log.seq}-${index}`} className="chain-block">
               {index > 0 && <div className={`chain-link ${linkClass}`} />}
               <motion.div
                 className={`chain-node ${nodeClass}`}

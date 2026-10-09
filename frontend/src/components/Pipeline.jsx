@@ -19,6 +19,12 @@ export const PIPELINE_NODES = [
 
 const SCRAMBLED_CHARS = '01#%&*+<>[]abcdef0123456789';
 
+export const isStepSkipped = (step) => {
+  if (!step || step.ok) return false;
+  const detail = (step.detail ?? '').toString().toLowerCase();
+  return detail.startsWith('skipped');
+};
+
 export function Pipeline({
   phase,
   actionType,
@@ -144,9 +150,6 @@ export function Pipeline({
             const checkIcon = containerRef.current.querySelector(`#check-${node.id}`);
             const crossIcon = containerRef.current.querySelector(`#cross-${node.id}`);
             const numText = containerRef.current.querySelector(`#num-${node.id}`);
-
-const isStepSkipped = (step) => !step?.ok && typeof step?.detail === 'string' && step.detail.toLowerCase().startsWith('skipped');
-
             if (step.ok) {
               if (circle) gsap.set(circle, { stroke: '#10b981', fill: '#06281e' });
               if (label) gsap.set(label, { fill: '#f1f5f9' });

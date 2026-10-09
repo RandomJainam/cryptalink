@@ -11,6 +11,70 @@ import { SecurityStatus } from './components/SecurityStatus.jsx';
 import { EventLog } from './components/EventLog.jsx';
 import { ChainStrip } from './components/ChainStrip.jsx';
 
+export class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary caught error:', error, errorInfo);
+  }
+
+  resetError = () => {
+    this.setState({ hasError: false, error: null });
+    if (this.props.onReset) {
+      this.props.onReset();
+    }
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="panel"
+          role="alert"
+          style={{
+            border: '1px solid var(--accent-red)',
+            padding: '24px',
+            margin: '20px 0',
+            background: 'rgba(239, 68, 68, 0.05)'
+          }}
+        >
+          <h2 style={{ color: 'var(--accent-red)', fontSize: '1.25rem', marginBottom: '8px' }}>
+            Application Render Error
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '0.875rem' }}>
+            A client-side error occurred while rendering the dashboard. Click below to reset.
+          </p>
+          <pre
+            className="mono"
+            style={{
+              background: 'var(--bg-base)',
+              padding: '12px',
+              borderRadius: '4px',
+              color: '#fca5a5',
+              overflowX: 'auto',
+              fontSize: '0.75rem',
+              marginBottom: '16px'
+            }}
+          >
+            {this.state.error?.message || String(this.state.error)}
+          </pre>
+          <button className="btn btn-secondary" onClick={this.resetError}>
+            Reset Dashboard
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [serverStatus, setServerStatus] = useState(null);
   const [isReachable, setIsReachable] = useState(true);
@@ -91,62 +155,64 @@ export default function App() {
     <div className="app-container">
       <Header serverStatus={serverStatus} isReachable={isReachable} />
 
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            className="error-banner"
-            role="alert"
-            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: shouldReduceMotion ? 0 : -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            <div>
-              <strong>{error.status ? `Error ${error.status}: ` : 'Error: '}</strong>
-              {error.message}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ErrorBoundary onReset={() => window.location.reload()}>
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              className="error-banner"
+              role="alert"
+              initial={{ opacity: 0, y: shouldReduceMotion ? 0 : -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: shouldReduceMotion ? 0 : -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div>
+                <strong>{error.status ? `Error ${error.status}: ` : 'Error: '}</strong>
+                {error.message}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      <ControlPanel
-        file={file}
-        onSelectFile={selectFile}
-        onTransfer={startTransfer}
-        onTamper={startTamper}
-        onReplay={startReplay}
-        isBusy={isBusy}
-        hasPreviousSuccess={hasPreviousSuccess}
-        error={error}
-      />
-
-      <Pipeline
-        phase={phase}
-        actionType={actionType}
-        result={result || lastCompletedResult}
-        error={error}
-        file={file}
-        onSkip={skipReveal}
-        onReplay={replayAnimation}
-        onFinishReveal={finishReveal}
-        timelineControllerRef={timelineControllerRef}
-      />
-
-      {(result || lastCompletedResult) && (
-        <ResultPanel result={result || lastCompletedResult} />
-      )}
-
-      <div className="two-col-grid">
-        <SecurityStatus status={serverStatus} />
-        <ChainStrip
-          logs={logs}
-          verificationResult={verificationResult}
-          isVerifying={isVerifying}
-          onVerify={handleVerifyChain}
+        <ControlPanel
+          file={file}
+          onSelectFile={selectFile}
+          onTransfer={startTransfer}
+          onTamper={startTamper}
+          onReplay={startReplay}
+          isBusy={isBusy}
+          hasPreviousSuccess={hasPreviousSuccess}
+          error={error}
         />
-      </div>
 
-      <EventLog logs={logs} />
+        <Pipeline
+          phase={phase}
+          actionType={actionType}
+          result={result || lastCompletedResult}
+          error={error}
+          file={file}
+          onSkip={skipReveal}
+          onReplay={replayAnimation}
+          onFinishReveal={finishReveal}
+          timelineControllerRef={timelineControllerRef}
+        />
+
+        {(result || lastCompletedResult) && (
+          <ResultPanel result={result || lastCompletedResult} />
+        )}
+
+        <div className="two-col-grid">
+          <SecurityStatus status={serverStatus} />
+          <ChainStrip
+            logs={logs}
+            verificationResult={verificationResult}
+            isVerifying={isVerifying}
+            onVerify={handleVerifyChain}
+          />
+        </div>
+
+        <EventLog logs={logs} />
+      </ErrorBoundary>
     </div>
   );
 }
