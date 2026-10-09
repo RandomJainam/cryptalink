@@ -101,7 +101,10 @@ def main():
     logger.append_event("SERVER_START", None, HOST, "accepted", "server started", 0)
     print(f"CryptaLink listening on {HOST}:{PORT}")
     print(f"Server public-key SHA-256 fingerprint: {fingerprint(public_key)}")
-    serve_forever(private_key=private_key, logger=logger)
+    try:
+        serve_forever(private_key=private_key, logger=logger)
+    except KeyboardInterrupt:
+        print("Server stopped")
 
 
 if __name__ == "__main__":

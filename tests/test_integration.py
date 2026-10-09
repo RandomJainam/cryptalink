@@ -165,6 +165,103 @@ def test_gateway_openapi_matches_spec_contract():
     assert optional_upload.get("required") is not True
 
 
+def test_gateway_status_to_steps_mapping():
+    from config import (STATUS_DECRYPT_FAILED, STATUS_INTEGRITY_FAILED, STATUS_INTERNAL,
+                        STATUS_MALFORMED, STATUS_OK, STATUS_REPLAY,
+                        STATUS_STALE_TIMESTAMP, STATUS_TOO_LARGE)
+    from gateway.main import _steps
+
+    progress = ["encrypt", "wrap_key", "integrity_tag", "transmit"]
+    cases = [
+        (STATUS_MALFORMED, [False, False, False, False, False]),
+        (STATUS_INTEGRITY_FAILED, [False, False, False, False, False]),
+        (STATUS_STALE_TIMESTAMP, [True, False, False, False, False]),
+        (STATUS_REPLAY, [True, True, False, False, False]),
+        (STATUS_DECRYPT_FAILED, [True, True, True, False, False]),
+        (STATUS_TOO_LARGE, [False, False, False, False, False]),
+        (STATUS_INTERNAL, [False, False, False, False, False]),
+        (STATUS_OK, [True, True, True, True, True]),
+    ]
+    for status_code, expected in cases:
+        server_steps = _steps(progress, status_code, "check rejected")[4:]
+        assert [step.ok for step in server_steps] == expected
+    failed_decrypt = _steps(progress, STATUS_DECRYPT_FAILED, "bad tag")[4:]
+    assert [step.name for step in failed_decrypt] == [
+        "verify_hmac", "freshness", "replay_check", "decrypt", "store",
+    ]
+    assert failed_decrypt[0].ok and failed_decrypt[1].ok and failed_decrypt[2].ok
+    assert failed_decrypt[3].ok is False and failed_decrypt[3].detail == "bad tag"
+
+
+def test_gateway_cors_has_both_local_origins():
+    from fastapi.middleware.cors import CORSMiddleware
+    from gateway.main import app
+
+    options = next(middleware.kwargs for middleware in app.user_middleware
+                   if middleware.cls is CORSMiddleware)
+    assert options["allow_origins"] == [
+        "http://localhost:5173", "http://127.0.0.1:5173",
+    ]
+
+
+def test_gateway_audit_access_is_read_only(tmp_path, monkeypatch):
+    import gateway.main
+    from unittest.mock import Mock
+    from types import SimpleNamespace
+    from audit.logger import AuditLogger
+
+    audit_path = tmp_path / "logs" / "audit.jsonl"
+    logger = AuditLogger(audit_path)
+    assert logger.read_events(50) == []
+    assert logger.verify_chain() == (True, None)
+    assert not audit_path.parent.exists()
+
+    read_only = SimpleNamespace(
+        read_events=Mock(return_value=[]),
+        verify_chain=Mock(return_value=(True, None)),
+        append_event=Mock(side_effect=AssertionError("gateway must not append audit events")),
+    )
+    monkeypatch.setattr(gateway.main, "AuditLogger", lambda: read_only)
+    assert gateway.main.logs() == []
+    assert gateway.main.verify_logs().chain_valid
+
+
+def test_gateway_transfer_returns_503_when_tcp_server_is_down(tmp_path, monkeypatch):
+    import gateway.main
+    from crypto.keys import save_public
+
+    _, public_key = generate_rsa_keypair()
+    public_path = tmp_path / "server_public.pem"
+    save_public(public_key, public_path)
+    monkeypatch.setattr(gateway.main, "PUBLIC_KEY_PATH", public_path)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    monkeypatch.setattr(gateway.main, "HOST", "127.0.0.1")
+    monkeypatch.setattr(gateway.main, "PORT", port)
+    with pytest.raises(HTTPException) as unavailable:
+        gateway.main.transfer(UploadFile(filename="offline.txt", file=io.BytesIO(b"offline")))
+    assert unavailable.value.status_code == 503
+    assert "TCP server unavailable" in unavailable.value.detail
+
+
+def test_server_main_handles_keyboard_interrupt(monkeypatch, capsys):
+    import server.server
+    from types import SimpleNamespace
+
+    key = SimpleNamespace(public_key=lambda: object())
+    logger = SimpleNamespace(append_event=lambda *_args: None)
+    monkeypatch.setattr(server.server, "_load_or_create_private_key", lambda: key)
+    monkeypatch.setattr(server.server, "fingerprint", lambda _key: "fingerprint")
+    monkeypatch.setattr(server.server, "AuditLogger", lambda: logger)
+    monkeypatch.setattr(server.server, "serve_forever",
+                        lambda **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt))
+    server.server.main()
+    output = capsys.readouterr().out
+    assert output.splitlines()[-1] == "Server stopped"
+    assert "Traceback" not in output
+
+
 def test_gateway_status_transfer_and_replay_use_tcp_server(tmp_path, monkeypatch):
     import gateway.main
     import gateway.state

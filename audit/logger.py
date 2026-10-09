@@ -16,7 +16,6 @@ def _canonical(event: dict) -> bytes:
 class AuditLogger:
     def __init__(self, path: str | Path = AUDIT_LOG_PATH):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._seq = 0
         self._prev_hash = "0" * 64
@@ -43,6 +42,7 @@ class AuditLogger:
             }
             event_hash = hashlib.sha256(self._prev_hash.encode("ascii") + _canonical(event)).hexdigest()
             record = {**event, "hash": event_hash}
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8", newline="\n") as output:
                 output.write(json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n")
             self._seq = record["seq"]
